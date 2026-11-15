@@ -51,4 +51,5 @@ export type Review = {
   message: string
   is_approved?: boolean
   is_featured: boolean
+  created_at?: string
 }

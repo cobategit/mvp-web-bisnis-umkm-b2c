@@ -63,23 +63,28 @@ func (a *App) RecordVisit(c *gin.Context) {
 		deviceType = "mobile"
 	}
 
-	// Hash IP + date salt untuk menjaga privasi sekaligus menghitung unique visitor harian
+	// Hash IP dengan secret untuk menjaga privasi sekaligus konsistensi identifikasi unik
 	ip := c.ClientIP()
-	today := time.Now().UTC().Format("2006-01-02")
 	h := sha256.New()
-	h.Write([]byte(ip + ":" + today + ":" + a.Cfg.JWTSecret))
+	h.Write([]byte(ip + ":" + a.Cfg.JWTSecret))
 	ipHash := hex.EncodeToString(h.Sum(nil))
 
-	// Jalankan insert ke database di goroutine terpisah agar respons ke visitor instan
+	// Jalankan insert ke database di goroutine terpisah agar respons ke visitor instan.
+	// Menggunakan ON CONFLICT (visit_date, ip_hash, path) DO NOTHING:
+	// Jika user dengan IP yang sama mengakses halaman yang sama pada hari yang sama,
+	// database tidak akan mencatat duplikasi (hanya tercatat 1 kali per hari).
 	db := a.DB
-	go func(p, r, hash, agent, device string) {
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
-		_, _ = db.Exec(ctx, `
-			INSERT INTO visitor_logs (path, referrer, ip_hash, user_agent, device_type) 
-			VALUES ($1, $2, $3, $4, $5)
-		`, p, r, hash, agent, device)
-	}(path, referrer, ipHash, ua, deviceType)
+	if db != nil {
+		go func(p, r, hash, agent, device string) {
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			_, _ = db.Exec(ctx, `
+				INSERT INTO visitor_logs (visit_date, path, referrer, ip_hash, user_agent, device_type) 
+				VALUES (CURRENT_DATE, $1, $2, $3, $4, $5)
+				ON CONFLICT (visit_date, ip_hash, path) DO NOTHING
+			`, p, r, hash, agent, device)
+		}(path, referrer, ipHash, ua, deviceType)
+	}
 
 	c.Status(http.StatusNoContent)
 }
@@ -89,14 +94,14 @@ func (a *App) getVisitorStats(c *gin.Context) gin.H {
 	_ = a.DB.QueryRow(c, `
 		SELECT COUNT(*), COUNT(DISTINCT ip_hash) 
 		FROM visitor_logs 
-		WHERE created_at >= CURRENT_DATE
+		WHERE visit_date = CURRENT_DATE
 	`).Scan(&todayViews, &todayUniques)
 
 	var totalViews7d, totalUniques7d int
 	_ = a.DB.QueryRow(c, `
 		SELECT COUNT(*), COUNT(DISTINCT ip_hash) 
 		FROM visitor_logs 
-		WHERE created_at >= NOW() - INTERVAL '7 days'
+		WHERE visit_date >= CURRENT_DATE - INTERVAL '6 days'
 	`).Scan(&totalViews7d, &totalUniques7d)
 
 	// 1. Daily trend (7 hari terakhir)
@@ -110,7 +115,7 @@ func (a *App) getVisitorStats(c *gin.Context) gin.H {
 		FROM (
 			SELECT GENERATE_SERIES(CURRENT_DATE - INTERVAL '6 days', CURRENT_DATE, '1 day'::interval)::date AS day
 		) d
-		LEFT JOIN visitor_logs v ON DATE(v.created_at) = d.day
+		LEFT JOIN visitor_logs v ON v.visit_date = d.day
 		GROUP BY d.day
 		ORDER BY d.day ASC
 	`)
@@ -135,7 +140,7 @@ func (a *App) getVisitorStats(c *gin.Context) gin.H {
 	rowsPages, err := a.DB.Query(c, `
 		SELECT path, COUNT(*) as views
 		FROM visitor_logs
-		WHERE created_at >= NOW() - INTERVAL '7 days'
+		WHERE visit_date >= CURRENT_DATE - INTERVAL '6 days'
 		GROUP BY path
 		ORDER BY views DESC
 		LIMIT 5
@@ -159,7 +164,7 @@ func (a *App) getVisitorStats(c *gin.Context) gin.H {
 	rowsDevices, err := a.DB.Query(c, `
 		SELECT device_type, COUNT(*) as count
 		FROM visitor_logs
-		WHERE created_at >= NOW() - INTERVAL '7 days'
+		WHERE visit_date >= CURRENT_DATE - INTERVAL '6 days'
 		GROUP BY device_type
 		ORDER BY count DESC
 	`)
@@ -192,7 +197,7 @@ func (a *App) getVisitorStats(c *gin.Context) gin.H {
 			END AS source,
 			COUNT(*) AS count
 		FROM visitor_logs
-		WHERE created_at >= NOW() - INTERVAL '7 days'
+		WHERE visit_date >= CURRENT_DATE - INTERVAL '6 days'
 		GROUP BY source
 		ORDER BY count DESC
 		LIMIT 5
@@ -222,4 +227,3 @@ func (a *App) getVisitorStats(c *gin.Context) gin.H {
 		"top_referrers":    topReferrers,
 	}
 }
-

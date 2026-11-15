@@ -3,8 +3,10 @@ package handler
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"net/http"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -207,39 +209,213 @@ func (a *App) DeleteArticle(c *gin.Context) {
 }
 
 func (a *App) AdminReviews(c *gin.Context) {
-	rows, err := a.DB.Query(c, `SELECT id::text,customer_name,rating,message,is_approved,is_featured,created_at FROM reviews ORDER BY created_at DESC`)
+	pageStr := c.Query("page")
+	limitStr := c.Query("limit")
+	status := c.Query("status")
+	search := strings.TrimSpace(c.Query("search"))
+
+	// Query stats across entire reviews table
+	var total, pending, approved, featured int
+	_ = a.DB.QueryRow(c, `
+		SELECT
+			COUNT(*),
+			COUNT(*) FILTER (WHERE is_approved = false),
+			COUNT(*) FILTER (WHERE is_approved = true),
+			COUNT(*) FILTER (WHERE is_featured = true)
+		FROM reviews
+	`).Scan(&total, &pending, &approved, &featured)
+
+	query := `SELECT id::text, customer_name, rating, message, is_approved, is_featured, created_at FROM reviews WHERE 1=1`
+	args := []any{}
+	argIdx := 1
+
+	if status == "pending" {
+		query += ` AND is_approved = false`
+	} else if status == "approved" {
+		query += ` AND is_approved = true`
+	} else if status == "featured" {
+		query += ` AND is_featured = true`
+	}
+
+	if search != "" {
+		query += fmt.Sprintf(` AND (customer_name ILIKE $%d OR message ILIKE $%d)`, argIdx, argIdx)
+		args = append(args, "%"+search+"%")
+		argIdx++
+	}
+
+	query += ` ORDER BY created_at DESC`
+
+	// Pagination: default limit=10, or custom limit
+	page := 1
+	limit := 10
+	if pageStr != "" {
+		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+			page = p
+		}
+	}
+	if limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 100 {
+			limit = l
+		}
+	}
+
+	isAll := c.Query("all") == "true" || limitStr == "0"
+	if !isAll {
+		offset := (page - 1) * limit
+		query += fmt.Sprintf(` LIMIT $%d OFFSET $%d`, argIdx, argIdx+1)
+		args = append(args, limit+1, offset)
+	}
+
+	rows, err := a.DB.Query(c, query, args...)
 	if err != nil {
 		c.JSON(500, gin.H{"message": "failed"})
 		return
 	}
 	defer rows.Close()
+
 	items := []gin.H{}
 	for rows.Next() {
 		var id, name, msg string
 		var rating int
-		var approved, featured bool
+		var isApproved, isFeatured bool
 		var created any
-		if rows.Scan(&id, &name, &rating, &msg, &approved, &featured, &created) == nil {
-			items = append(items, gin.H{"id": id, "customer_name": name, "rating": rating, "message": msg, "is_approved": approved, "is_featured": featured, "created_at": created})
+		if rows.Scan(&id, &name, &rating, &msg, &isApproved, &isFeatured, &created) == nil {
+			items = append(items, gin.H{
+				"id":            id,
+				"customer_name": name,
+				"rating":        rating,
+				"message":       msg,
+				"is_approved":   isApproved,
+				"is_featured":   isFeatured,
+				"created_at":    created,
+			})
 		}
 	}
-	c.JSON(200, gin.H{"data": items})
+
+	var nextPage *int
+	if !isAll && len(items) > limit {
+		items = items[:limit]
+		next := page + 1
+		nextPage = &next
+	}
+
+	c.JSON(200, gin.H{
+		"data":      items,
+		"next_page": nextPage,
+		"page":      page,
+		"limit":     limit,
+		"stats": gin.H{
+			"total":    total,
+			"pending":  pending,
+			"approved": approved,
+			"featured": featured,
+		},
+	})
 }
+
+type createReviewPayload struct {
+	CustomerName string `json:"customer_name" binding:"required,max=120"`
+	Rating       int    `json:"rating" binding:"required,min=1,max=5"`
+	Message      string `json:"message" binding:"required,max=1000"`
+	IsApproved   *bool  `json:"is_approved"`
+	IsFeatured   bool   `json:"is_featured"`
+}
+
+func (a *App) CreateReview(c *gin.Context) {
+	var r createReviewPayload
+	if err := c.ShouldBindJSON(&r); err != nil {
+		c.JSON(400, gin.H{"message": "Data review tidak valid: " + err.Error()})
+		return
+	}
+	name := strings.TrimSpace(r.CustomerName)
+	msg := strings.TrimSpace(r.Message)
+	if name == "" || msg == "" {
+		c.JSON(400, gin.H{"message": "Nama pelanggan dan pesan ulasan wajib diisi"})
+		return
+	}
+	if r.Rating < 1 || r.Rating > 5 {
+		c.JSON(400, gin.H{"message": "Rating harus bernilai antara 1 dan 5"})
+		return
+	}
+
+	isApproved := true
+	if r.IsApproved != nil {
+		isApproved = *r.IsApproved
+	}
+
+	sanitizedName := bluemonday.StrictPolicy().Sanitize(name)
+	sanitizedMsg := bluemonday.StrictPolicy().Sanitize(msg)
+
+	var id string
+	err := a.DB.QueryRow(c, `
+		INSERT INTO reviews(customer_name, rating, message, is_approved, is_featured)
+		VALUES($1, $2, $3, $4, $5)
+		RETURNING id::text
+	`, sanitizedName, r.Rating, sanitizedMsg, isApproved, r.IsFeatured).Scan(&id)
+	if err != nil {
+		c.JSON(500, gin.H{"message": "Gagal menambahkan review"})
+		return
+	}
+	c.JSON(201, gin.H{"id": id, "message": "Review berhasil ditambahkan"})
+}
+
+type updateReviewPayload struct {
+	CustomerName *string `json:"customer_name"`
+	Rating       *int    `json:"rating"`
+	Message      *string `json:"message"`
+	IsApproved   *bool   `json:"is_approved"`
+	IsFeatured   *bool   `json:"is_featured"`
+}
+
 func (a *App) UpdateReview(c *gin.Context) {
-	var r struct {
-		IsApproved bool `json:"is_approved"`
-		IsFeatured bool `json:"is_featured"`
-	}
-	if c.ShouldBindJSON(&r) != nil {
-		c.JSON(400, gin.H{"message": "invalid payload"})
+	var r updateReviewPayload
+	if err := c.ShouldBindJSON(&r); err != nil {
+		c.JSON(400, gin.H{"message": "Payload tidak valid"})
 		return
 	}
-	ct, err := a.DB.Exec(c, `UPDATE reviews SET is_approved=$1,is_featured=$2,updated_at=NOW() WHERE id=$3`, r.IsApproved, r.IsFeatured, c.Param("id"))
+
+	var sanitizedName *string
+	if r.CustomerName != nil {
+		trimmed := strings.TrimSpace(*r.CustomerName)
+		if trimmed == "" || len(trimmed) > 120 {
+			c.JSON(400, gin.H{"message": "Nama pelanggan harus antara 1 dan 120 karakter"})
+			return
+		}
+		clean := bluemonday.StrictPolicy().Sanitize(trimmed)
+		sanitizedName = &clean
+	}
+
+	if r.Rating != nil && (*r.Rating < 1 || *r.Rating > 5) {
+		c.JSON(400, gin.H{"message": "Rating harus bernilai antara 1 dan 5"})
+		return
+	}
+
+	var sanitizedMsg *string
+	if r.Message != nil {
+		trimmed := strings.TrimSpace(*r.Message)
+		if trimmed == "" || len(trimmed) > 1000 {
+			c.JSON(400, gin.H{"message": "Pesan ulasan harus antara 1 dan 1000 karakter"})
+			return
+		}
+		clean := bluemonday.StrictPolicy().Sanitize(trimmed)
+		sanitizedMsg = &clean
+	}
+
+	ct, err := a.DB.Exec(c, `
+		UPDATE reviews SET
+			customer_name = COALESCE($1::varchar, customer_name),
+			rating = COALESCE($2::smallint, rating),
+			message = COALESCE($3::varchar, message),
+			is_approved = COALESCE($4::boolean, is_approved),
+			is_featured = COALESCE($5::boolean, is_featured),
+			updated_at = NOW()
+		WHERE id = $6
+	`, sanitizedName, r.Rating, sanitizedMsg, r.IsApproved, r.IsFeatured, c.Param("id"))
 	if err != nil || ct.RowsAffected() == 0 {
-		c.JSON(404, gin.H{"message": "not found"})
+		c.JSON(404, gin.H{"message": "Review tidak ditemukan atau gagal diperbarui"})
 		return
 	}
-	c.JSON(200, gin.H{"message": "updated"})
+	c.JSON(200, gin.H{"message": "Review berhasil diperbarui"})
 }
 func (a *App) DeleteReview(c *gin.Context) {
 	ct, err := a.DB.Exec(c, `DELETE FROM reviews WHERE id=$1`, c.Param("id"))

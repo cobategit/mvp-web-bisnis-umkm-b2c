@@ -248,10 +248,10 @@ export function DashboardPage() {
 
       {/* Alur Kerja CMS */}
       <div className="panel" style={{ marginTop: '24px' }}>
-        <h2>Alur Kerja CMS</h2>
+        <h2>Alur Kerja CMS & Aturan Statistik</h2>
         <p>
           Produk dan artikel dapat disimpan sebagai draft/published. Review dari website masuk sebagai pending dan baru tampil setelah disetujui admin.
-          Statistik pengunjung di atas diperbarui secara otomatis setiap kali ada pengunjung membuka halaman publik website Anda.
+          Statistik pengunjung mencatat 1 kunjungan per IP per halaman setiap hari (akses berulang atau refresh pada halaman yang sama di hari yang sama tidak dihitung ganda; kunjungan akan dihitung kembali jika sudah berganti hari).
         </p>
       </div>
     </div>

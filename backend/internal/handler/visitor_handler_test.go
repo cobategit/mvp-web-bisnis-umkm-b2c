@@ -55,5 +55,16 @@ func TestRecordVisitFiltering(t *testing.T) {
 			t.Errorf("expected 204 for bot User-Agent, got %d", w.Code)
 		}
 	}
-}
 
+	// 4. Valid normal public visitor: should return 204 No Content
+	{
+		req, _ := http.NewRequest(http.MethodPost, "/api/v1/public/visit", bytes.NewBufferString(`{"path":"/produk/spanduk","referrer":"https://google.com"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusNoContent {
+			t.Errorf("expected 204 for valid visit, got %d", w.Code)
+		}
+	}
+}
