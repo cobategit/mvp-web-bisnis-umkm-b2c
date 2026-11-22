@@ -67,4 +67,26 @@ func TestRecordVisitFiltering(t *testing.T) {
 			t.Errorf("expected 204 for valid visit, got %d", w.Code)
 		}
 	}
+
+	// 5. AdminVisitorLogs with nil DB returns 200 with empty data
+	{
+		r.GET("/api/v1/admin/visitors", app.AdminVisitorLogs)
+		req, _ := http.NewRequest(http.MethodGet, "/api/v1/admin/visitors", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Errorf("expected 200 for AdminVisitorLogs, got %d", w.Code)
+		}
+	}
+
+	// 6. ExportVisitorLogsCSV with nil DB returns 200 with CSV headers
+	{
+		r.GET("/api/v1/admin/visitors/export", app.ExportVisitorLogsCSV)
+		req, _ := http.NewRequest(http.MethodGet, "/api/v1/admin/visitors/export", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Errorf("expected 200 for ExportVisitorLogsCSV, got %d", w.Code)
+		}
+	}
 }

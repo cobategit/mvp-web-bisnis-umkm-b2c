@@ -1,6 +1,8 @@
+import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { apiFetch, type ApiResult } from '../../api/client'
 import { useAuth } from '../../auth/AuthContext'
+import type { VisitorLogsResponse } from '../../types'
 
 type DailyStat = {
   date: string
@@ -51,8 +53,15 @@ export function DashboardPage() {
     enabled: !!accessToken,
   })
 
+  const latestVisitsQ = useQuery<VisitorLogsResponse>({
+    queryKey: ['admin-latest-visitors'],
+    queryFn: () => apiFetch<VisitorLogsResponse>('/admin/visitors?limit=6', {}, accessToken),
+    enabled: !!accessToken,
+  })
+
   const s = q.data?.data
   const vs = s?.visitor_stats
+  const latestLogs = latestVisitsQ.data?.data || []
 
   // Hitung nilai maksimum untuk scaling bar chart
   const maxViews = Math.max(...(vs?.daily_trend?.map((d) => d.views) || [0]), 5)
@@ -242,6 +251,106 @@ export function DashboardPage() {
                 <div className="empty-analytics-note">Belum ada data traffic referal.</div>
               )}
             </div>
+          </div>
+        </div>
+
+        {/* Tabel Kunjungan Terbaru */}
+        <div className="panel" style={{ marginTop: '8px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '16px', color: 'var(--navy)' }}>Kunjungan Terbaru</h3>
+              <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--muted)' }}>
+                Daftar aktivitas kunjungan pengguna terbaru di website publik.
+              </p>
+            </div>
+            <Link to="/cms/pengunjung" className="btn btn-secondary btn-sm" style={{ textDecoration: 'none' }}>
+              Lihat Semua Log Pengunjung ({latestVisitsQ.data?.total ?? 0}) →
+            </Link>
+          </div>
+
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Waktu</th>
+                  <th>Halaman (Path)</th>
+                  <th>Perangkat</th>
+                  <th>Sumber</th>
+                  <th>ID Pengunjung</th>
+                </tr>
+              </thead>
+              <tbody>
+                {latestVisitsQ.isLoading ? (
+                  <tr>
+                    <td colSpan={5} style={{ textAlign: 'center', padding: '20px', color: 'var(--muted)' }}>
+                      Memuat kunjungan terbaru...
+                    </td>
+                  </tr>
+                ) : latestLogs.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} style={{ textAlign: 'center', padding: '24px', color: 'var(--muted)' }}>
+                      Belum ada data kunjungan tercatat hari ini.
+                    </td>
+                  </tr>
+                ) : (
+                  latestLogs.map((log) => {
+                    const shortHash = log.ip_hash.substring(0, 8)
+                    const timeFormatted = new Date(log.created_at).toLocaleTimeString('id-ID', {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      second: '2-digit',
+                    }) + ' WIB'
+
+                    const devLabel =
+                      log.device_type === 'mobile'
+                        ? '📱 Mobile'
+                        : log.device_type === 'tablet'
+                        ? '📟 Tablet'
+                        : '💻 Desktop'
+
+                    const refLabel = !log.referrer
+                      ? 'Langsung (Direct)'
+                      : log.referrer.toLowerCase().includes('google')
+                      ? 'Google'
+                      : log.referrer.toLowerCase().includes('instagram')
+                      ? 'Instagram'
+                      : log.referrer.toLowerCase().includes('facebook')
+                      ? 'Facebook'
+                      : log.referrer.toLowerCase().includes('whatsapp')
+                      ? 'WhatsApp'
+                      : 'Lainnya'
+
+                    return (
+                      <tr key={log.id}>
+                        <td>
+                          <strong>{log.visit_date}</strong>
+                          <small>{timeFormatted}</small>
+                        </td>
+                        <td>
+                          <a
+                            href={log.path}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{ color: 'var(--navy)', fontWeight: 600, textDecoration: 'none' }}
+                          >
+                            {log.path}
+                          </a>
+                        </td>
+                        <td>
+                          <span style={{ fontSize: '13px' }}>{devLabel}</span>
+                        </td>
+                        <td>
+                          <span style={{ fontSize: '13px', color: 'var(--muted)' }}>{refLabel}</span>
+                        </td>
+                        <td>
+                          <span className="hash-pill">#{shortHash}</span>
+                        </td>
+                      </tr>
+                    )
+                  })
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
       </div>

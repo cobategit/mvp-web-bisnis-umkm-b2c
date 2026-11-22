@@ -11,6 +11,7 @@ import { ReviewsPage } from './pages/public/ReviewsPage'
 import { AboutPage } from './pages/public/AboutPage'
 import { LoginPage } from './pages/admin/LoginPage'
 import { DashboardPage } from './pages/admin/DashboardPage'
+import { VisitorsAdminPage } from './pages/admin/VisitorsAdminPage'
 import { ProductsAdminPage } from './pages/admin/ProductsAdminPage'
 import { ArticlesAdminPage } from './pages/admin/ArticlesAdminPage'
 import { ReviewsAdminPage } from './pages/admin/ReviewsAdminPage'
@@ -32,6 +33,7 @@ export default function App() {
     <Route path="cms/login" element={<LoginPage />} />
     <Route path="cms" element={<ProtectedRoute><AdminLayout /></ProtectedRoute>}>
       <Route index element={<ProtectedRoute permission="dashboard.read"><DashboardPage /></ProtectedRoute>} />
+      <Route path="pengunjung" element={<ProtectedRoute permission="dashboard.read"><VisitorsAdminPage /></ProtectedRoute>} />
       <Route path="produk" element={<ProtectedRoute permission="products.read"><ProductsAdminPage /></ProtectedRoute>} />
       <Route path="artikel" element={<ProtectedRoute permission="articles.read"><ArticlesAdminPage /></ProtectedRoute>} />
       <Route path="review" element={<ProtectedRoute permission="reviews.read"><ReviewsAdminPage /></ProtectedRoute>} />

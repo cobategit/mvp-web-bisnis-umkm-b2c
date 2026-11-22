@@ -8,6 +8,7 @@ import { AdminGlobalLoader } from '../components/admin/AdminGlobalLoader'
 
 const menu: Array<[string, string, string?]> = [
   ['/cms', 'Dashboard', 'dashboard.read'],
+  ['/cms/pengunjung', 'Pengunjung', 'dashboard.read'],
   ['/cms/produk', 'Produk', 'products.read'],
   ['/cms/artikel', 'Artikel', 'articles.read'],
   ['/cms/review', 'Review', 'reviews.read'],

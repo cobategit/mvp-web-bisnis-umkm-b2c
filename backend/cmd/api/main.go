@@ -69,6 +69,8 @@ func main() {
 
 	admin := api.Group("/admin", middleware.Auth(cfg.JWTSecret))
 	admin.GET("/dashboard", middleware.RequirePermission("dashboard.read"), app.Dashboard)
+	admin.GET("/visitors", middleware.RequirePermission("dashboard.read"), app.AdminVisitorLogs)
+	admin.GET("/visitors/export", middleware.RequirePermission("dashboard.read"), app.ExportVisitorLogsCSV)
 	admin.GET("/products", middleware.RequirePermission("products.read"), app.AdminProducts)
 	admin.POST("/products", middleware.RequirePermission("products.write"), app.CreateProduct)
 	admin.PUT("/products/:id", middleware.RequirePermission("products.write"), app.UpdateProduct)

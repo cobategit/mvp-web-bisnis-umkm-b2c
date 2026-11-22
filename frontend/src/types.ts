@@ -53,3 +53,22 @@ export type Review = {
   is_featured: boolean
   created_at?: string
 }
+
+export type VisitorLog = {
+  id: number
+  visit_date: string
+  path: string
+  referrer: string
+  ip_hash: string
+  user_agent: string
+  device_type: 'desktop' | 'mobile' | 'tablet' | string
+  created_at: string
+}
+
+export type VisitorLogsResponse = {
+  data: VisitorLog[]
+  page: number
+  limit: number
+  total: number
+  total_pages: number
+}
