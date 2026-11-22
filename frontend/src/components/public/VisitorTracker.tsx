@@ -14,11 +14,24 @@ export function VisitorTracker() {
       return
     }
 
-    // Hindari duplikasi pencatatan jika path sama (misal re-render)
+    // Hindari duplikasi jika path sama persis (misal re-render component)
     if (lastRecordedRef.current === fullPath) {
       return
     }
     lastRecordedRef.current = fullPath
+
+    // Cek sessionStorage: jika halaman ini sudah dikunjungi pada hari ini oleh browser ini,
+    // tidak perlu mengirim request lagi untuk menghemat bandwidth
+    const today = new Date().toISOString().slice(0, 10)
+    const storageKey = `visited_${today}_${fullPath}`
+
+    try {
+      if (sessionStorage.getItem(storageKey)) {
+        return
+      }
+    } catch {
+      // Abaikan jika browser memblokir sessionStorage (misal mode private ketat)
+    }
 
     try {
       fetch(`${API_URL}/public/visit`, {
@@ -29,9 +42,19 @@ export function VisitorTracker() {
           referrer: typeof document !== 'undefined' ? document.referrer || '' : '',
         }),
         keepalive: true,
-      }).catch(() => {
-        // Abaikan error jaringan saat offline/gangguan agar tidak mengganggu browsing user
       })
+        .then((res) => {
+          if (res.ok) {
+            try {
+              sessionStorage.setItem(storageKey, '1')
+            } catch {
+              // Silently ignore
+            }
+          }
+        })
+        .catch(() => {
+          // Abaikan error jaringan saat offline/gangguan agar tidak mengganggu browsing user
+        })
     } catch {
       // Silently ignore
     }
@@ -39,4 +62,3 @@ export function VisitorTracker() {
 
   return null
 }
-

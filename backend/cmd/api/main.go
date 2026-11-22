@@ -69,6 +69,8 @@ func main() {
 
 	admin := api.Group("/admin", middleware.Auth(cfg.JWTSecret))
 	admin.GET("/dashboard", middleware.RequirePermission("dashboard.read"), app.Dashboard)
+	admin.GET("/visitors", middleware.RequirePermission("dashboard.read"), app.AdminVisitorLogs)
+	admin.GET("/visitors/export", middleware.RequirePermission("dashboard.read"), app.ExportVisitorLogsCSV)
 	admin.GET("/products", middleware.RequirePermission("products.read"), app.AdminProducts)
 	admin.POST("/products", middleware.RequirePermission("products.write"), app.CreateProduct)
 	admin.PUT("/products/:id", middleware.RequirePermission("products.write"), app.UpdateProduct)
@@ -78,7 +80,9 @@ func main() {
 	admin.PUT("/articles/:id", middleware.RequirePermission("articles.write"), app.UpdateArticle)
 	admin.DELETE("/articles/:id", middleware.RequirePermission("articles.write"), app.DeleteArticle)
 	admin.GET("/reviews", middleware.RequirePermission("reviews.read"), app.AdminReviews)
+	admin.POST("/reviews", middleware.RequirePermission("reviews.write"), app.CreateReview)
 	admin.PATCH("/reviews/:id", middleware.RequirePermission("reviews.write"), app.UpdateReview)
+	admin.PUT("/reviews/:id", middleware.RequirePermission("reviews.write"), app.UpdateReview)
 	admin.DELETE("/reviews/:id", middleware.RequirePermission("reviews.write"), app.DeleteReview)
 	admin.GET("/pages/:key", middleware.RequirePermission("pages.read"), app.AdminPage)
 	admin.PUT("/pages/:key", middleware.RequirePermission("pages.write"), app.UpdatePage)
